@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>TikZ Graph Generator —OMG finally Fixed</title>
+<style>
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; max-width:980px; margin:20px auto; padding:16px; }
+  h1 { font-size:18px; margin:0 0 8px; }
+  .panel { display:flex; gap:20px; align-items:flex-start; }
+  .left { min-width: 260px; }
+  .grid { display:grid; grid-template-columns: repeat(4, 56px); gap:6px; }
+  .cell {
+    width:56px; height:56px;
+    border:1px solid #333;
+    display:flex; align-items:center; justify-content:center;
+    font-size:26px; cursor:pointer; user-select:none; background:#fff;
+  }
+  .controls { margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; }
+  button { padding:8px 12px; font-size:14px; cursor:pointer; }
+  .preview { border:1px solid #ddd; padding:12px; background:#fafafa; }
+  canvas { display:block; background: white; }
+  textarea { width:100%; height:260px; margin-top:10px; font-family:monospace; font-size:13px; }
+  .small { font-size:13px; color:#444; margin-top:6px; }
+</style>
+</head>
+<body>
+
+<h1>TikZ Diagonal Generator — Graph Preview (fixed)</h1>
+<p class="small">Click any cell to toggle its diagonal. Preview shows nodes and edges; TikZ output matches the preview exactly.</p>
+
+<div class="panel">
+  <div class="left">
+    <div>
+      <strong>Input (4×4 cells)</strong>
+      <div class="grid" id="grid"></div>
+    </div>
+
+    <div class="controls">
+      <button id="btn-clear">Clear (all \)</button>
+      <button id="btn-random">Randomize</button>
+      <button id="btn-copy">Copy TikZ</button>
+    </div>
+
+  </div>
+
+  <div style="flex:1">
+    <div class="preview">
+      <strong>Live Graph Preview (5×5 nodes)</strong>
+      <div style="margin-top:8px;">
+        <canvas id="c" width="420" height="420"></canvas>
+      </div>
+    </div>
+
+    <textarea id="output" spellcheck="false"></textarea>
+  </div>
+</div>
+
+<script>
+
+const N = 4;                    // small squares per side
+let cells = Array(N*N).fill("\\"); // input UI state, index = uiRow*4 + uiCol
+
+const grid = document.getElementById('grid');
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const output = document.getElementById('output');
+const btnClear = document.getElementById('btn-clear');
+const btnRandom = document.getElementById('btn-random');
+const btnCopy = document.getElementById('btn-copy');
+
+function makeUIGrid() {
+  grid.innerHTML = '';
+  for (let r = 0; r < N; r++) {
+    for (let c = 0; c < N; c++) {
+      const idx = r*N + c;
+      const div = document.createElement('div');
+      div.className = 'cell';
+      div.dataset.idx = idx;
+      div.textContent = cells[idx];
+      div.onclick = () => {
+        cells[idx] = cells[idx] === "\\" ? "/" : "\\";
+        div.textContent = cells[idx];
+        render();
+      };
+      grid.appendChild(div);
+    }
+  }
+}
+
+function render() {
+  drawCanvas();
+  generateTikZ();
+}
+
+function drawCanvas() {
+  // canvas layout parameters
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const margin = 30;
+  const gridSize = N; // 4
+  const nodesPerSide = gridSize + 1; // 5
+  const step = Math.floor((canvas.width - margin*2) / gridSize); // spacing between nodes
+
+  // helper: convert TikZ coordinate (x,y) with y upwards to canvas coords (cx,cy)
+  function toCanvasX(x) { return margin + x*step; }
+  function toCanvasY(y) { return margin + (gridSize - y)*step; } // invert y
+
+  // draw horizontal edges for all x=0..3, y=0..4
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#666';
+  for (let x=0; x<gridSize; x++){
+    for (let y=0; y<=gridSize; y++){
+      const x1 = toCanvasX(x), y1 = toCanvasY(y);
+      const x2 = toCanvasX(x+1), y2 = toCanvasY(y);
+      ctx.beginPath();
+      ctx.moveTo(x1,y1); ctx.lineTo(x2,y2);
+      ctx.stroke();
+    }
+  }
+
+  // vertical edges for x=0..4, y=0..3
+  for (let x=0; x<=gridSize; x++){
+    for (let y=0; y<gridSize; y++){
+      const x1 = toCanvasX(x), y1 = toCanvasY(y);
+      const x2 = toCanvasX(x), y2 = toCanvasY(y+1);
+      ctx.beginPath();
+      ctx.moveTo(x1,y1); ctx.lineTo(x2,y2);
+      ctx.stroke();
+    }
+  }
+
+  // diagonals for each small square using mapping from UI row->tikz row
+  ctx.strokeStyle = '#111';
+  ctx.lineWidth = 2.2;
+  for (let uiRow=0; uiRow<N; uiRow++){
+    for (let uiCol=0; uiCol<N; uiCol++){
+      const idx = uiRow*N + uiCol;
+      const orient = cells[idx]; // '/' or '\'
+      const tikzRow = (N-1) - uiRow;
+      const col = uiCol;
+      const row = tikzRow;
+
+      if (orient === "/") {
+        // (col,row) -> (col+1,row+1)
+        const x1 = toCanvasX(col), y1 = toCanvasY(row);
+        const x2 = toCanvasX(col+1), y2 = toCanvasY(row+1);
+        ctx.beginPath();
+        ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+      } else {
+        // "\" diagonal: (col,row+1) -> (col+1,row)
+        const x1 = toCanvasX(col), y1 = toCanvasY(row+1);
+        const x2 = toCanvasX(col+1), y2 = toCanvasY(row);
+        ctx.beginPath();
+        ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+      }
+    }
+  }
+
+  // draw nodes as solid black dots (5x5)
+  ctx.fillStyle = '#000';
+  for (let y=0; y<=gridSize; y++){
+    for (let x=0; x<=gridSize; x++){
+      const cx = toCanvasX(x), cy = toCanvasY(y);
+      ctx.beginPath();
+      ctx.arc(cx, cy, 5, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+}
+
+function generateTikZ() {
+  // Build TikZ so it matches the preview exactly (nodes + edges + diagonals)
+  let s = "\\begin{tikzpicture}[scale=1]\n";
+  s += "  % nodes (5×5 lattice)\n";
+  for (let y=0; y<=4; y++){
+    for (let x=0; x<=4; x++){
+        s += `  \\node[draw,fill=black,circle,inner sep=2pt] (N${x}${y}) at (${x},${y}) {};\n`;
+    }
+}
+  s += "\n  % horizontal edges\n";
+  for (let x=0; x<=3; x++){
+    for (let y=0; y<=4; y++){
+      s += `  \\draw (N${x}${y}) -- (N${x+1}${y});\n`;
+    }
+  }
+  s += "\n  % vertical edges\n";
+  for (let x=0; x<=4; x++){
+    for (let y=0; y<=3; y++){
+      s += `  \\draw (N${x}${y}) -- (N${x}${y+1});\n`;
+    }
+  }
+
+  s += "\n  % diagonals (one per small square)\n";
+  for (let uiRow=0; uiRow<N; uiRow++){
+    for (let uiCol=0; uiCol<N; uiCol++){
+      const idx = uiRow*N + uiCol;
+      const orient = cells[idx];
+      const tikzRow = (N-1) - uiRow;
+      const col = uiCol;
+      const row = tikzRow;
+      if (orient === "/") {
+        s += `  \\draw (N${col}${row}) -- (N${col+1}${row+1});\n`;
+      } else {
+        s += `  \\draw (N${col}${row+1}) -- (N${col+1}${row});\n`;
+      }
+    }
+  }
+
+  s += "\\end{tikzpicture}\n";
+  output.value = s;
+}
+
+// buttons
+btnClear.onclick = () => {
+  cells.fill("\\");
+  // update UI text
+  grid.querySelectorAll('.cell').forEach((d, i) => d.textContent = cells[i]);
+  render();
+};
+btnRandom.onclick = () => {
+  for (let i=0;i<cells.length;i++) cells[i] = (Math.random()<0.5 ? "\\" : "/");
+  grid.querySelectorAll('.cell').forEach((d,i)=> d.textContent = cells[i]);
+  render();
+};
+btnCopy.onclick = () => {
+  output.select();
+  try {
+    document.execCommand('copy');
+    btnCopy.textContent = 'Copied!';
+    setTimeout(()=> btnCopy.textContent = 'Copy TikZ', 900);
+  } catch(e) {
+    alert('Copy failed — select and copy manually.');
+  }
+};
+
+// init
+makeUIGrid();
+render();
+
+</script>
+</body>
+</html>
