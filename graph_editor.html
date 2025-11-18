@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Graph Editor 5×5</title>
+<style>
+  :root { --w: 720px; }
+  body { font-family: sans-serif; max-width: calc(var(--w) + 40px); margin:20px auto; }
+  .controls { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  button { padding:8px 12px; }
+  #canvasWrap { border:1px solid #ddd; width:var(--w); height:var(--w); }
+  textarea { width:100%; height:200px; margin-top:12px; font-family:monospace; }
+</style>
+</head>
+<body>
+
+<h2>Interactive 5×5 Graph</h2>
+<div class="controls">
+  <button id="btn-reset">Reset</button>
+  <button id="btn-clear-edges">Clear Edges</button>
+  <button id="btn-clear-nodes">Clear Nodes</button>
+  <button id="btn-copy">Copy TikZ</button>
+  <button id="btn-export">Export PNG</button>
+</div>
+
+<div id="canvasWrap"><canvas id="cv" width="720" height="720"></canvas></div>
+<textarea id="tikzOut"></textarea>
+
+<script>
+const canvas = document.getElementById('cv');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+const margin = 60, gridN = 4, step = (W - margin*2)/gridN;
+
+let nodes = [];
+let edges = {};
+let sel = null;
+
+function ekey(x1,y1,x2,y2){
+  const a=`${x1},${y1}`, b=`${x2},${y2}`;
+  return a<b ? `${a}-${b}` : `${b}-${a}`;
+}
+
+function reset(){
+  nodes = Array.from({length:5},()=>Array(5).fill(true));
+  edges = {};
+  for(let y=0;y<5;y++) for(let x=0;x<4;x++) edges[ekey(x,y,x+1,y)] = true;
+  for(let x=0;x<5;x++) for(let y=0;y<4;y++) edges[ekey(x,y,x,y+1)] = true;
+  sel = null;
+}
+reset();
+
+function cx(x){ return margin + x*step; }
+function cy(y){ return margin + (gridN-y)*step; }
+function d2(ax,ay,bx,by){ const dx=ax-bx,dy=ay-by; return dx*dx+dy*dy; }
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  ctx.strokeStyle="#eee"; ctx.lineWidth=1;
+  for(let i=0;i<=gridN;i++){
+    ctx.beginPath(); ctx.moveTo(cx(i),margin); ctx.lineTo(cx(i),margin+gridN*step); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(margin,cy(i)); ctx.lineTo(margin+gridN*step,cy(i)); ctx.stroke();
+  }
+  ctx.lineWidth=3; ctx.strokeStyle="#000";
+  for(const k in edges){
+    if(!edges[k]) continue;
+    const [a,b]=k.split('-');
+    const [x1,y1]=a.split(',').map(Number);
+    const [x2,y2]=b.split(',').map(Number);
+    if(!nodes[y1][x1]||!nodes[y2][x2]) continue;
+    ctx.beginPath();
+    ctx.moveTo(cx(x1),cy(y1));
+    ctx.lineTo(cx(x2),cy(y2));
+    ctx.stroke();
+  }
+  for(let y=0;y<5;y++) for(let x=0;x<5;x++){
+    ctx.beginPath();
+    ctx.arc(cx(x),cy(y),6,0,2*Math.PI);
+    if(nodes[y][x]) ctx.fill(); else ctx.stroke();
+  }
+  if(sel){
+    ctx.beginPath();
+    ctx.strokeStyle="red";
+    ctx.arc(cx(sel.x),cy(sel.y),12,0,2*Math.PI);
+    ctx.stroke();
+  }
+}
+
+canvas.addEventListener('click',(e)=>{
+  const r = canvas.getBoundingClientRect();
+  const mx=e.clientX-r.left, my=e.clientY-r.top;
+
+  for(let y=0;y<5;y++) for(let x=0;x<5;x++){
+    if(d2(cx(x),cy(y),mx,my)<=12*12){
+      if(!e.ctrlKey){
+        nodes[y][x] = !nodes[y][x];
+        if(!nodes[y][x]){
+          for(const k in edges){
+            const [a,b]=k.split('-');
+            const [x1,y1]=a.split(',').map(Number);
+            const [x2,y2]=b.split(',').map(Number);
+            if((x1===x&&y1===y)||(x2===x&&y2===y)) edges[k]=false;
+          }
+        }
+        sel=null;
+        draw(); tikz();
+        return;
+      } else {
+        if(!sel){ sel={x,y}; draw(); return; }
+        const k=ekey(sel.x,sel.y,x,y);
+        edges[k]=true;
+        sel=null;
+        draw(); tikz();
+        return;
+      }
+    }
+  }
+
+  const T=14*14;
+  for(let y=0;y<5;y++) for(let x=0;x<5;x++){
+    const neigh=[[x+1,y],[x,y+1],[x+1,y+1],[x+1,y-1]];
+    for(const [xx,yy] of neigh){
+      if(xx<0||xx>4||yy<0||yy>4) continue;
+      const mx2=(cx(x)+cx(xx))/2, my2=(cy(y)+cy(yy))/2;
+      if(d2(mx2,my2,mx,my)<=T){
+        const k=ekey(x,y,xx,yy);
+        edges[k]=!edges[k];
+        sel=null;
+        draw(); tikz();
+        return;
+      }
+    }
+  }
+  sel=null; draw();
+});
+
+canvas.addEventListener('contextmenu',(e)=>{
+  e.preventDefault();
+  const r=canvas.getBoundingClientRect();
+  const mx=e.clientX-r.left, my=e.clientY-r.top;
+  const T=16*16;
+  for(let y=0;y<5;y++) for(let x=0;x<5;x++){
+    const neigh=[[x+1,y],[x,y+1],[x+1,y+1],[x+1,y-1]];
+    for(const [xx,yy] of neigh){
+      if(xx<0||xx>4||yy<0||yy>4) continue;
+      const mx2=(cx(x)+cx(xx))/2, my2=(cy(y)+cy(yy))/2;
+      if(d2(mx2,my2,mx,my)<=T){
+        const k=ekey(x,y,xx,yy);
+        edges[k]=false;
+        draw(); tikz();
+        return;
+      }
+    }
+  }
+});
+
+function tikz(){
+  let s="\\begin{tikzpicture}\n";
+  for(let y=0;y<5;y++) for(let x=0;x<5;x++){
+    if(nodes[y][x]) s+=`  \\node[draw,fill=black,circle,inner sep=2pt] (N${x}${y}) at (${x},${y}) {};\n`;
+  }
+  for(const k in edges){
+    if(!edges[k]) continue;
+    const [a,b]=k.split('-');
+    const [x1,y1]=a.split(',').map(Number);
+    const [x2,y2]=b.split(',').map(Number);
+    if(nodes[y1][x1]&&nodes[y2][x2])
+      s+=`  \\draw (N${x1}${y1}) -- (N${x2}${y2});\n`;
+  }
+  s+="\\end{tikzpicture}";
+  document.getElementById('tikzOut').value=s;
+}
+
+document.getElementById('btn-reset').onclick=()=>{reset();draw();tikz();};
+document.getElementById('btn-clear-edges').onclick=()=>{for(const k in edges)edges[k]=false;draw();tikz();};
+document.getElementById('btn-clear-nodes').onclick=()=>{nodes=Array.from({length:5},()=>Array(5).fill(false));for(const k in edges)edges[k]=false;sel=null;draw();tikz();};
+document.getElementById('btn-copy').onclick=()=>{const t=document.getElementById('tikzOut');t.select();document.execCommand('copy');};
+document.getElementById('btn-export').onclick=()=>{const a=document.createElement('a');a.download='graph.png';a.href=canvas.toDataURL();a.click();};
+
+draw(); tikz();
+</script>
+</body>
+</html>
