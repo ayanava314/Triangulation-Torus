@@ -6,4 +6,4 @@ A simple web tool to quickly generate triangulations of a torus in LaTeX. Click 
 [https://ayanava314.github.io/Triangulation-Torus/](https://ayanava314.github.io/Triangulation-Torus/)
 
 # Bonus Stuffs:
-For triangulations using less than 16 vertices go to Graph Editor. Click to add/remove edges/vertices. To add an edge between two vertices press ctrl and two vertices.
+For triangulations using less than 16 vertices go to [Graph Editor](https://ayanava314.github.io/Triangulation-Torus/graph_editor.html). Click to add/remove edges/vertices. To add an edge between two vertices press ctrl and two vertices.
